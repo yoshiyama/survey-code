@@ -1,1 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <title>測量学プログラム</title>
+
+  <style>
+    body {
+      max-width: 1000px;
+      margin: 30px auto;
+      padding: 0 16px;
+      font-family: sans-serif;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+
+    .code-box {
+      position: relative;
+      margin-top: 20px;
+    }
+
+    .copy-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 7px 14px;
+      border: 1px solid #777;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .copy-button:hover {
+      background: #eeeeee;
+    }
+
+    pre {
+      padding: 55px 20px 20px;
+      overflow-x: auto;
+      border-radius: 8px;
+      background: #202124;
+      color: #f1f1f1;
+      line-height: 1.5;
+      font-size: 14px;
+      white-space: pre;
+    }
+
+    #message {
+      min-height: 24px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>平面直角座標のプログラム</h1>
+
+  <p>
+    コピーを押し，Google Colabのセルに貼り付けてください．
+  </p>
+
+  <p id="message"></p>
+
+  <div class="code-box">
+
+    <button id="copyButton" class="copy-button" type="button">
+      コピー
+    </button>
+
+    <pre><code id="sourceCode">student_id = "D23253"
+student_name = "山本義幸"
+
+print(student_id)
+print(student_name)</code></pre>
+
+  </div>
+
+  <script>
+    const button = document.getElementById("copyButton");
+    const sourceCode = document.getElementById("sourceCode");
+    const message = document.getElementById("message");
+
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(sourceCode.textContent);
+
+        button.textContent = "コピー済み";
+        message.textContent = "プログラムをコピーしました．";
+
+        setTimeout(() => {
+          button.textContent = "コピー";
+          message.textContent = "";
+        }, 2000);
+
+      } catch (error) {
+        message.textContent =
+          "コピーできませんでした．ブラウザの設定を確認してください．";
+      }
+    });
+  </script>
+
+</body>
+</html>
