@@ -74,11 +74,496 @@
       コピー
     </button>
 
-    <pre><code id="sourceCode">student_id = "D23253"
+    <pre><code id="sourceCode">
+# Google Colab用
+# 学籍番号と氏名は，このソース上で直接書き換える
+
+!pip -q install pyproj contextily japanize-matplotlib
+
+import hashlib
+import numpy as np
+import matplotlib.pyplot as plt
+import contextily as ctx
+import japanize_matplotlib
+
+from pyproj import Transformer, Geod
+
+
+# =========================================================
+# 1．学籍番号と氏名を入力
+# =========================================================
+
+student_id = "D23253"
 student_name = "山本義幸"
 
-print(student_id)
-print(student_name)</code></pre>
+
+# =========================================================
+# 2．座標系を設定
+# =========================================================
+
+# JGD2011の緯度経度
+geo_crs = "EPSG:6668"
+
+# JGD2011／平面直角座標系第VII系
+plane_crs = "EPSG:6675"
+
+# 緯度経度から平面直角座標へ変換
+to_plane = Transformer.from_crs(
+    geo_crs,
+    plane_crs,
+    always_xy=True
+)
+
+# 平面直角座標から緯度経度へ変換
+to_geo = Transformer.from_crs(
+    plane_crs,
+    geo_crs,
+    always_xy=True
+)
+
+# GRS80楕円体
+geod = Geod(ellps="GRS80")
+
+
+# =========================================================
+# 3．対象地点を平面直角座標へ変換
+# =========================================================
+
+latitude = 35.187231
+longitude = 137.110626
+
+# always_xy=Trueなので，経度，緯度の順に入力する
+# 戻り値はY座標，X座標の順
+Y0, X0 = to_plane.transform(
+    longitude,
+    latitude
+)
+
+
+# =========================================================
+# 4．学籍番号から再現可能な乱数を作る
+# =========================================================
+
+# 同じ学籍番号なら，同じ乱数になる
+seed_text = hashlib.sha256(
+    student_id.encode("utf-8")
+).hexdigest()
+
+seed = int(seed_text[:8], 16)
+
+rng = np.random.default_rng(seed)
+
+
+# =========================================================
+# 5．約20mの三角形を学生ごとに作る
+# =========================================================
+
+# AB，ACを18～22mにする
+length_ab = rng.uniform(18.0, 22.0)
+length_ac = rng.uniform(18.0, 22.0)
+
+# A点の角度を50～70度にする
+angle_a_deg = rng.uniform(50.0, 70.0)
+angle_a_rad = np.deg2rad(angle_a_deg)
+
+# 三角形全体の向きを変える
+rotation_deg = rng.uniform(0.0, 360.0)
+rotation_rad = np.deg2rad(rotation_deg)
+
+# A点
+A_X = X0
+A_Y = Y0
+
+# B点
+B_X = X0 + length_ab * np.cos(rotation_rad)
+B_Y = Y0 + length_ab * np.sin(rotation_rad)
+
+# C点
+direction_c = rotation_rad + angle_a_rad
+
+C_X = X0 + length_ac * np.cos(direction_c)
+C_Y = Y0 + length_ac * np.sin(direction_c)
+
+# 座標の順序は（X座標，Y座標）
+points = {
+    "A": (A_X, A_Y),
+    "B": (B_X, B_Y),
+    "C": (C_X, C_Y)
+}
+
+
+# =========================================================
+# 6．学籍番号から三角形の色を決める
+# =========================================================
+
+color_number = seed % 20
+triangle_color = plt.colormaps["tab20"](color_number)
+
+
+# =========================================================
+# 7．座標を配列にする
+# =========================================================
+
+names = ["A", "B", "C"]
+
+X = np.array([
+    points[name][0]
+    for name in names
+])
+
+Y = np.array([
+    points[name][1]
+    for name in names
+])
+
+
+# =========================================================
+# 8．図を作成
+# =========================================================
+
+fig, ax = plt.subplots(figsize=(10, 10))
+
+# 三角形の内部
+ax.fill(
+    Y,
+    X,
+    color=triangle_color,
+    alpha=0.30,
+    zorder=3
+)
+
+# 三角形の辺
+ax.plot(
+    np.r_[Y, Y[0]],
+    np.r_[X, X[0]],
+    color=triangle_color,
+    linewidth=3,
+    zorder=4
+)
+
+# 三角形の頂点
+ax.scatter(
+    Y,
+    X,
+    color="black",
+    s=50,
+    zorder=5
+)
+
+
+# =========================================================
+# 9．頂点名を表示
+# =========================================================
+
+for name, x, y in zip(names, X, Y):
+
+    ax.text(
+        y,
+        x,
+        f" {name}点",
+        fontsize=11,
+        zorder=6,
+        bbox=dict(
+            facecolor="white",
+            edgecolor="black",
+            alpha=0.85
+        )
+    )
+
+
+# =========================================================
+# 10．各辺の距離を計算
+# =========================================================
+
+results = []
+
+sides = [
+    (0, 1),
+    (1, 2),
+    (2, 0)
+]
+
+for i, j in sides:
+
+    # 平面直角座標上の距離
+    plane_distance = np.hypot(
+        X[j] - X[i],
+        Y[j] - Y[i]
+    )
+
+    # 平面直角座標から緯度経度へ変換
+    lon1, lat1 = to_geo.transform(
+        Y[i],
+        X[i]
+    )
+
+    lon2, lat2 = to_geo.transform(
+        Y[j],
+        X[j]
+    )
+
+    # GRS80楕円体上の測地線距離
+    _, _, ellipsoid_distance = geod.inv(
+        lon1,
+        lat1,
+        lon2,
+        lat2
+    )
+
+    # 平面距離－楕円体距離
+    difference_mm = (
+        plane_distance - ellipsoid_distance
+    ) * 1000.0
+
+    # 1km当たりの差
+    difference_per_km_mm = (
+        plane_distance - ellipsoid_distance
+    ) / plane_distance * 1_000_000.0
+
+    results.append({
+        "辺": f"{names[i]}-{names[j]}",
+        "平面距離": plane_distance,
+        "楕円体距離": ellipsoid_distance,
+        "差": difference_mm,
+        "1km当たりの差": difference_per_km_mm
+    })
+
+    # 辺の中点
+    middle_y = (Y[i] + Y[j]) / 2.0
+    middle_x = (X[i] + X[j]) / 2.0
+
+    # 三角形の重心
+    center_y = Y.mean()
+    center_x = X.mean()
+
+    # ラベルを辺の外側へ移動
+    vector_y = middle_y - center_y
+    vector_x = middle_x - center_x
+
+    vector_length = np.hypot(
+        vector_y,
+        vector_x
+    )
+
+    if vector_length > 0:
+
+        label_y = (
+            middle_y
+            + 4.5 * vector_y / vector_length
+        )
+
+        label_x = (
+            middle_x
+            + 4.5 * vector_x / vector_length
+        )
+
+    else:
+
+        label_y = middle_y
+        label_x = middle_x
+
+    # 各辺の距離を表示
+    ax.text(
+        label_y,
+        label_x,
+        f"{names[i]}-{names[j]}\n"
+        f"平面距離：{plane_distance:.3f} m\n"
+        f"楕円体距離：{ellipsoid_distance:.3f} m\n"
+        f"差：{difference_mm:+.2f} mm",
+        ha="center",
+        va="center",
+        fontsize=9,
+        zorder=7,
+        bbox=dict(
+            facecolor="yellow",
+            edgecolor="black",
+            alpha=0.88
+        )
+    )
+
+
+# =========================================================
+# 11．学籍番号と氏名を三角形の近くに表示
+# =========================================================
+
+center_y = Y.mean()
+
+# 三角形の最上部より少し上
+student_label_y = center_y
+student_label_x = X.max() + 5.0
+
+ax.text(
+    student_label_y,
+    student_label_x,
+    f"学籍番号：{student_id}\n"
+    f"氏名：{student_name}",
+    ha="center",
+    va="bottom",
+    fontsize=12,
+    zorder=10,
+    bbox=dict(
+        facecolor="white",
+        edgecolor=triangle_color,
+        linewidth=2.5,
+        alpha=0.95
+    )
+)
+
+
+# =========================================================
+# 12．表示範囲を設定
+# =========================================================
+
+margin = 20.0
+
+ax.set_xlim(
+    Y.min() - margin,
+    Y.max() + margin
+)
+
+ax.set_ylim(
+    X.min() - margin,
+    X.max() + margin + 7.0
+)
+
+
+# =========================================================
+# 13．国土地理院の空中写真を表示
+# =========================================================
+
+gsi_photo = (
+    "https://cyberjapandata.gsi.go.jp/xyz/"
+    "seamlessphoto/{z}/{x}/{y}.jpg"
+)
+
+photo_loaded = False
+
+# ズームレベル18から順に試す
+for zoom_level in [18, 17, 16]:
+
+    try:
+
+        ctx.add_basemap(
+            ax,
+            source=gsi_photo,
+            crs=plane_crs,
+            zoom=zoom_level,
+            attribution="国土地理院",
+            zorder=1
+        )
+
+        photo_loaded = True
+        break
+
+    except Exception:
+
+        print(
+            f"国土地理院のズームレベル"
+            f"{zoom_level}を取得できませんでした．"
+        )
+
+# 国土地理院の空中写真を取得できない場合
+if not photo_loaded:
+
+    try:
+
+        ctx.add_basemap(
+            ax,
+            source=ctx.providers.Esri.WorldImagery,
+            crs=plane_crs,
+            zoom=18,
+            attribution="Esri World Imagery",
+            zorder=1
+        )
+
+        photo_loaded = True
+
+    except Exception:
+
+        print(
+            "空中写真を取得できなかったため，"
+            "背景なしで表示します．"
+        )
+
+
+# =========================================================
+# 14．図の体裁
+# =========================================================
+
+ax.set_xlabel("Y座標［m］")
+ax.set_ylabel("X座標［m］")
+
+ax.set_title(
+    "平面直角座標系第VII系における三角形\n"
+    "平面距離と楕円体上の距離の比較"
+)
+
+ax.set_aspect("equal")
+
+ax.grid(
+    linewidth=0.5,
+    alpha=0.5
+)
+
+plt.show()
+
+
+# =========================================================
+# 15．計算結果を文字でも表示
+# =========================================================
+
+print()
+print("======================================")
+print("実行者")
+print("======================================")
+print(f"学籍番号：{student_id}")
+print(f"氏名：{student_name}")
+
+print()
+print("======================================")
+print("各頂点の平面直角座標")
+print("======================================")
+
+for name in names:
+
+    x, y = points[name]
+
+    print(
+        f"{name}点："
+        f"X={x:.3f} m，"
+        f"Y={y:.3f} m"
+    )
+
+print()
+print("======================================")
+print("各辺の計算結果")
+print("======================================")
+
+for result in results:
+
+    print()
+    print(f"辺：{result['辺']}")
+
+    print(
+        f"平面距離："
+        f"{result['平面距離']:.6f} m"
+    )
+
+    print(
+        f"楕円体上の距離："
+        f"{result['楕円体距離']:.6f} m"
+    )
+
+    print(
+        f"平面距離－楕円体上の距離："
+        f"{result['差']:+.3f} mm"
+    )
+
+    print(
+        f"1km当たりの差："
+        f"{result['1km当たりの差']:+.3f} mm/km"
+    )
+    </code></pre>
 
   </div>
 
